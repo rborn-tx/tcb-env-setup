@@ -28,7 +28,6 @@ _tcb_cleanup() {
     unset _TCB_CHOSEN_TAG
     unset _TCB_DOCKER_EXTRA
     unset _TCB_INTERACTIVE_FLAGS
-    unset _TCB_LATEST
     unset _TCB_LATEST_LOCAL
     unset _TCB_LATEST_REMOTE
     unset _TCB_LOCAL_TAGS
@@ -259,22 +258,22 @@ _tcb_load_tags() {
 }
 
 _tcb_get_latest_tag() {
-    _TCB_LATEST=0
-    for _TCB_TAG in $(echo "$@"); do
-        if [[ ${_TCB_TAG} != *"."* ]]; then
-            if [[ ${_TCB_TAG} -gt ${_TCB_LATEST} ]]; then
-                _TCB_LATEST=${_TCB_TAG}
+    local _tcb_latest="" _tcb_tag=""
+    for _tcb_tag in $(echo "$@"); do
+        if [[ ${_tcb_tag} != *"."* ]]; then
+            if [[ ${_tcb_tag} -gt ${_tcb_latest} ]]; then
+                _tcb_latest=${_tcb_tag}
             fi
         fi
     done
-    return "${_TCB_LATEST}"
+    [ -n "${_tcb_latest}" ] || return 1
+    echo "${_tcb_latest}"
 }
 
 _tcb_choose_tag() {
     local yn
 
-    _tcb_get_latest_tag "${_TCB_REMOTE_TAGS}"
-    _TCB_LATEST_REMOTE=$?
+    _TCB_LATEST_REMOTE=$(_tcb_get_latest_tag "${_TCB_REMOTE_TAGS}")
 
     if [[ -z ${_TCB_LOCAL_TAGS} && -z ${_TCB_AUTO_MODE} && -z ${_TCB_USER_TAG} ]]; then
         echo "TorizonCore Builder is not installed. Pulling the latest version from Docker Hub..."
@@ -282,8 +281,7 @@ _tcb_choose_tag() {
         _TCB_CHOSEN_TAG=${_TCB_LATEST_REMOTE}
 
     elif [[ -n ${_TCB_LOCAL_TAGS} && -z ${_TCB_AUTO_MODE} && -z ${_TCB_USER_TAG} ]]; then
-        _tcb_get_latest_tag "${_TCB_LOCAL_TAGS}"
-        _TCB_LATEST_LOCAL=$?
+        _TCB_LATEST_LOCAL=$(_tcb_get_latest_tag "${_TCB_LOCAL_TAGS}")
         echo -n "You may have an outdated version installed. Would you like to check for updates online? [y/n] "
         read -r yn
         case ${yn} in
@@ -303,18 +301,19 @@ _tcb_choose_tag() {
         esac
 
     elif [[ ${_TCB_AUTO_MODE} == "local" ]]; then
-        _tcb_get_latest_tag "${_TCB_LOCAL_TAGS}"
-        _TCB_LATEST_LOCAL=$?
-        if [[ ${_TCB_LATEST_LOCAL} == "0" ]]; then
+        _TCB_LATEST_LOCAL=$(_tcb_get_latest_tag "${_TCB_LOCAL_TAGS}")
+        if [[ -z ${_TCB_LATEST_LOCAL} ]]; then
             echo "Error: no local versions found!"
             _tcb_cleanup
             return 1
         fi
         _TCB_PULL_REMOTE=false
         _TCB_CHOSEN_TAG=${_TCB_LATEST_LOCAL}
+
     elif [[ ${_TCB_AUTO_MODE} == "remote" ]]; then
         _TCB_PULL_REMOTE=true
         _TCB_CHOSEN_TAG=${_TCB_LATEST_REMOTE}
+
     elif [[ -n ${_TCB_USER_TAG} ]]; then
         _TCB_PULL_REMOTE=true
         _TCB_CHOSEN_TAG=${_TCB_USER_TAG}
