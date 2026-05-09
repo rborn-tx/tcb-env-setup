@@ -27,22 +27,27 @@ _tcb_cleanup() {
     unset _TCB_AUTO_MODE
     unset _TCB_CHOSEN_TAG
     unset _TCB_DOCKER_EXTRA
+    unset _TCB_ID
     unset _TCB_IMAGENAME
-    unset _TCB_INTERACTIVE_FLAGS
     unset _TCB_LATEST_LOCAL
     unset _TCB_LATEST_REMOTE
     unset _TCB_LOCAL_TAGS
     unset _TCB_NAMESPACE
-    unset _TCB_NETWORK
+    unset _TCB_OPT_DAEMON_VOL
+    unset _TCB_OPT_DEPLOY_VOL
+    unset _TCB_OPT_SELFNAME
+    unset _TCB_OPT_NETWORK
+    unset _TCB_OPT_RM
+    unset _TCB_OPT_STORAGE_VOL
+    unset _TCB_OPT_WORKDIR_VOL
     unset _TCB_PULL_REMOTE
     unset _TCB_REMOTE_TAGS
+    unset _TCB_RUN_CMD
     unset _TCB_SCRIPT_PATH
     unset _TCB_SOURCED
     unset _TCB_STORAGE
-    unset _TCB_TAG
     unset _TCB_UNDER_WINDOWS
     unset _TCB_USER_TAG
-    unset _TCB_VOLUMES
 }
 
 _tcb_teardown() {
@@ -50,9 +55,8 @@ _tcb_teardown() {
         unset -f _tcb_check_sourced
         unset -f _tcb_check_updated
         unset -f _tcb_choose_tag
-        unset -f _tcb_define_alias
+        unset -f _tcb_define_command
         unset -f _tcb_detect_platform
-        unset -f _tcb_detect_tty
         unset -f _tcb_get_latest_tag
         unset -f _tcb_init_defaults
         unset -f _tcb_load_completion_if_latest
@@ -92,11 +96,8 @@ Optional arguments:
       This flag is mutually exclusive with the -a flag.
 
   -d: disable volumes
-      With this flag enabled the script will setup torizoncore-builder
-      without Docker volumes meaning some torizoncore-builder commands will
-      require additional directories to be passed as arguments. By default
-      with this flag excluded torizoncore-builder is setup with Docker
-      volumes.
+      When this flag is passed, no deployment volume will be assigned to the
+      TorizonCore Builder container as done by default.
 
   -s: select storage directory or Docker volume
       Internal storage directory or Docker volume that TorizonCore Builder
@@ -151,22 +152,27 @@ _tcb_detect_platform() {
     fi
 }
 
-_tcb_detect_tty() {
-    _TCB_INTERACTIVE_FLAGS=""
-    if [[ -t 0 && -t 1 ]]; then
-        _TCB_INTERACTIVE_FLAGS="-it"
-    fi
-}
-
 _tcb_init_defaults() {
-    _TCB_NAMESPACE=${TCB_NAMESPACE:-'torizon'}
-    _TCB_IMAGENAME=${TCB_IMAGENAME:-'torizoncore-builder'}
-    _TCB_VOLUMES=" -v /deploy "
     _TCB_STORAGE="storage"
-    _TCB_NETWORK=" --network=host "
+
+    _TCB_RUN_CMD=${TCB_RUN_CMD:-"docker run"}
+    _TCB_OPT_RM=${TCB_OPT_RM:-"--rm"}
+    _TCB_OPT_DEPLOY_VOL=${TCB_OPT_DEPLOY_VOL:-"-v /deploy"}
+    _TCB_OPT_STORAGE_VOL=${TCB_OPT_STORAGE_VOL:-"-v ${_TCB_STORAGE}:/storage"}
+    _TCB_OPT_WORKDIR_VOL=${TCB_OPT_WORKDIR_VOL:-'-v "$(pwd)":/workdir'}
+    _TCB_OPT_DAEMON_VOL=${TCB_OPT_DAEMON_VOL:-"-v /var/run/docker.sock:/var/run/docker.sock"}
+
     if [ "${_TCB_UNDER_WINDOWS}" = "true" ]; then
-        _TCB_NETWORK=" "
+        _TCB_OPT_NETWORK=${TCB_OPT_NETWORK:-""}
+    else
+        _TCB_OPT_NETWORK=${TCB_OPT_NETWORK:-"--network=host"}
     fi
+
+    _TCB_ID=$(echo $(head -c 3 /dev/urandom | od -An -tu4))
+    _TCB_OPT_SELFNAME=${TCB_OPT_SELFNAME:-"-e TCB_CONTAINER_NAME=tcb_${_TCB_ID} --name tcb_${_TCB_ID}"}
+
+    _TCB_NAMESPACE=${TCB_NAMESPACE:-"torizon"}
+    _TCB_IMAGENAME=${TCB_IMAGENAME:-"torizoncore-builder"}
 }
 
 _tcb_parse_args() {
@@ -186,16 +192,18 @@ _tcb_parse_args() {
                 ;;
             -s)
                 _TCB_STORAGE="$2"
+                _TCB_OPT_STORAGE_VOL="-v ${_TCB_STORAGE}:/storage"
                 [ "$2" ] || _TCB_STORAGE="empty"
                 shift
                 shift
                 ;;
             -d)
-                _TCB_VOLUMES=" "
+                # TODO: Consider deprecating this switch (or describing use cases for it).
+                _TCB_OPT_DEPLOY_VOL=""
                 shift
                 ;;
             -n)
-                _TCB_NETWORK=" "
+                _TCB_OPT_NETWORK=""
                 shift
                 ;;
             --)
@@ -355,14 +363,32 @@ _tcb_load_completion_if_latest() {
     fi
 }
 
-_tcb_dynamic_params() {
-    local cont_name="tcb_$(date +%s)"
-    echo "-e TCB_CONTAINER_NAME=${cont_name} --name ${cont_name}"
-}
+_tcb_define_command() {
+    TCB_COMMAND_BASE=${_TCB_RUN_CMD}
+    TCB_COMMAND_ARGS=""
+    TCB_COMMAND_ARGS+=${_TCB_OPT_RM:+" ${_TCB_OPT_RM}"}
+    TCB_COMMAND_ARGS+=${_TCB_OPT_DEPLOY_VOL:+" ${_TCB_OPT_DEPLOY_VOL}"}
+    TCB_COMMAND_ARGS+=${_TCB_OPT_WORKDIR_VOL:+" ${_TCB_OPT_WORKDIR_VOL}"}
+    TCB_COMMAND_ARGS+=${_TCB_OPT_STORAGE_VOL:+" ${_TCB_OPT_STORAGE_VOL}"}
+    TCB_COMMAND_ARGS+=${_TCB_OPT_DAEMON_VOL:+" ${_TCB_OPT_DAEMON_VOL}"}
+    TCB_COMMAND_ARGS+=${_TCB_OPT_NETWORK:+" ${_TCB_OPT_NETWORK}"}
+    TCB_COMMAND_ARGS+=${_TCB_OPT_SELFNAME:+" ${_TCB_OPT_SELFNAME}"}
+    TCB_COMMAND_ARGS+=${_TCB_DOCKER_EXTRA:+" ${_TCB_DOCKER_EXTRA}"}
+    TCB_COMMAND_ARGS+=" ${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}"
+    TCB_COMMAND="${TCB_COMMAND_BASE}${TCB_COMMAND_ARGS}"
 
-_tcb_define_alias() {
-    export -f _tcb_dynamic_params
-    alias torizoncore-builder='docker run --rm '"${_TCB_INTERACTIVE_FLAGS}"' '"${_TCB_VOLUMES}"'-v "$(pwd)":/workdir -v '"${_TCB_STORAGE}"':/storage -v /var/run/docker.sock:/var/run/docker.sock'"${_TCB_NETWORK}"'$(_tcb_dynamic_params) '"${_TCB_DOCKER_EXTRA}"" ${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:""${_TCB_CHOSEN_TAG}"
+    # Define main command:
+    torizoncore-builder() {
+        __tcb_flags=""
+        if [ -t 0 ]; then
+            __tcb_flags+=" -i"
+        fi
+        if [ -t 1 ] && [ -t 2 ]; then
+            __tcb_flags+=" -t"
+        fi
+        eval "${TCB_COMMAND_BASE}${__tcb_flags}${TCB_COMMAND_ARGS}" "$@"
+    }
+    export -f torizoncore-builder
 }
 
 _tcb_print_final_messages() {
@@ -394,7 +420,6 @@ _tcb_main() {
     _tcb_check_sourced
     _tcb_cleanup
     _tcb_detect_platform
-    _tcb_detect_tty
     _tcb_init_defaults
 
     if ! _tcb_parse_args "$@"; then
@@ -411,17 +436,22 @@ _tcb_main() {
         _tcb_teardown
         return
     fi
+
+    # TODO: Avoid this call when running in "local" mode.
     _tcb_load_tags
     if ! _tcb_choose_tag; then
         _tcb_teardown
         return
     fi
+
     if ! _tcb_pull_if_needed; then
         _tcb_teardown
         return
     fi
+
+    # TODO: Consider putting the completion script inside the container image.
     _tcb_load_completion_if_latest
-    _tcb_define_alias
+    _tcb_define_command
     _tcb_print_final_messages
 
     _tcb_cleanup

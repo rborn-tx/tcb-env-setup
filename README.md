@@ -70,11 +70,8 @@ optional arguments:
       This flag is mutually exclusive with the -a flag.
 
   -d: disable volumes
-      With this flag enabled the script will setup torizoncore-builder
-      without Docker volumes meaning some torizoncore-builder commands will
-      require additional directories to be passed as arguments. By default
-      with this flag excluded torizoncore-builder is setup with Docker
-      volumes.
+      When this flag is passed, no deployment volume will be assigned to the
+      TorizonCore Builder container as done by default.
 
   -s: select storage directory or Docker volume
       Internal storage directory or Docker volume that TorizonCore Builder
@@ -96,3 +93,24 @@ optional arguments:
   -h: help
        Prints usage information.
 ```
+
+### Exported variables and functions
+
+- Function: `torizoncore-builder`
+  Main function to invoke the tool (interactively or not).
+
+- Variable: `TCB_COMMAND`
+  Full command-line to run the TorizonCore Builder container in non-interactive mode (no `-i` or `-t` flags passed to `docker run`), except for the arguments to the container itself. By evaluating this variable, one can execute torizoncore-builder:
+  ```
+  $ eval "${TCB_COMMAND}" <arguments>
+  ```
+  For example, to get the help on the `platform push` command, run:
+  ```
+  $ eval "${TCB_COMMAND}" platform push --help
+  ```
+
+- Variables: `TCB_COMMAND_BASE`, `TCB_COMMAND_ARGS`
+  Variable `TCB_COMMAND` is actually set by concatenating these two variables. The former contains the `docker run` invocation and the latter all arguments to be passed to that command including the name of the TorizonCore Builder container image. To pass extra arguments to `docker run` (i.e. not to the container being started), these variables can be used separately. For example, to add the `-t` flag to `docker run` when starting the tool's container (to cause the allocation of a TTY to it), run:
+  ```
+  $ eval "${TCB_COMMAND_BASE} -it ${TCB_COMMAND_ARGS}" platform push --help
+  ```
