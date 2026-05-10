@@ -124,14 +124,16 @@ _tcb_check_updated() {
     [ ! -f "$1" ] && return
 
     local target_url="https://raw.githubusercontent.com/toradex/tcb-env-setup/master/tcb-env-setup.sh"
+    local tmp_file
+    tmp_file=$(mktemp) || return
 
     local status_code
-    status_code=$(curl -sL -o tcb-env-setup.sh.tmp -w '%{http_code}' "${target_url}")
+    status_code=$(curl -sL -o "${tmp_file}" -w '%{http_code}' "${target_url}")
     local remote_md5sum
-    remote_md5sum=$(md5sum tcb-env-setup.sh.tmp | cut -d ' ' -f 1)
+    remote_md5sum=$(md5sum "${tmp_file}" | cut -d ' ' -f 1)
     local local_md5sum
     local_md5sum=$(md5sum "$1" | cut -d ' ' -f 1)
-    rm tcb-env-setup.sh.tmp
+    rm -f "${tmp_file}"
 
     if [ "${status_code}" -eq 200 -a "${remote_md5sum}" != "${local_md5sum}" ]; then
         cat <<EOF
@@ -344,9 +346,12 @@ _tcb_pull_if_needed() {
 
 _tcb_load_completion_if_latest() {
     if [[ "${_TCB_CHOSEN_TAG}" == "${_TCB_LATEST_REMOTE}" ]]; then
-        if wget -q https://raw.githubusercontent.com/toradex/tcb-env-setup/master/torizoncore-builder-completion.bash -O ./torizoncore-builder-completion.bash.tmp 2>/dev/null; then
-            source ./torizoncore-builder-completion.bash.tmp 2>/dev/null && rm -rf torizoncore-builder-completion.bash.tmp
+        local tmp_file
+        tmp_file=$(mktemp) || return
+        if curl -sL https://raw.githubusercontent.com/toradex/tcb-env-setup/master/torizoncore-builder-completion.bash -o "${tmp_file}" 2>/dev/null; then
+            source "${tmp_file}" 2>/dev/null
         fi
+        rm -f "${tmp_file}"
     fi
 }
 
