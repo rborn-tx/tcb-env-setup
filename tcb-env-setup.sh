@@ -27,10 +27,12 @@ _tcb_cleanup() {
     unset _TCB_AUTO_MODE
     unset _TCB_CHOSEN_TAG
     unset _TCB_DOCKER_EXTRA
+    unset _TCB_IMAGENAME
     unset _TCB_INTERACTIVE_FLAGS
     unset _TCB_LATEST_LOCAL
     unset _TCB_LATEST_REMOTE
     unset _TCB_LOCAL_TAGS
+    unset _TCB_NAMESPACE
     unset _TCB_NETWORK
     unset _TCB_PULL_REMOTE
     unset _TCB_REMOTE_TAGS
@@ -155,6 +157,8 @@ _tcb_detect_tty() {
 }
 
 _tcb_init_defaults() {
+    _TCB_NAMESPACE=${TCB_NAMESPACE:-'torizon'}
+    _TCB_IMAGENAME=${TCB_IMAGENAME:-'torizoncore-builder'}
     _TCB_VOLUMES=" -v /deploy "
     _TCB_STORAGE="storage"
     _TCB_NETWORK=" --network=host "
@@ -250,11 +254,10 @@ _tcb_validate_inputs() {
 }
 
 _tcb_load_tags() {
-    _TCB_REMOTE_TAGS=$(curl -L -s 'https://registry.hub.docker.com/v2/namespaces/torizon/repositories/torizoncore-builder/tags' \
+    _TCB_REMOTE_TAGS=$(curl -L -s "https://registry.hub.docker.com/v2/namespaces/${_TCB_NAMESPACE}/repositories/${_TCB_IMAGENAME}/tags" \
                            | sed -n -e 's/\("name"\) *: *\("[^"]\+"\)/\n\1:\2\n/gp' \
                            | sed -n -e 's/"name":"\([^"]\+\)"/\1/p')
-    _TCB_LOCAL_TAGS=$(docker images "torizon/torizoncore-builder" 2>/dev/null \
-                          | sed -n 's/^.*torizoncore-builder\s\+\([0-9]\+\).*$/\1/p')
+    _TCB_LOCAL_TAGS=$(docker images "${_TCB_NAMESPACE}/${_TCB_IMAGENAME}" --format "{{.Tag}}" | sed -n '/^[0-9]/p')
 }
 
 _tcb_get_latest_tag() {
@@ -327,7 +330,7 @@ _tcb_pull_if_needed() {
 
     if [[ ${_TCB_PULL_REMOTE} == true ]]; then
         echo -e "Pulling TorizonCore Builder..."
-        if docker pull torizon/torizoncore-builder:"${_TCB_CHOSEN_TAG}"; then
+        if docker pull "${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}"; then
             echo -e "Done!\n"
         else
             echo "Error: could not pull TorizonCore Builder from Docker Hub!"
@@ -354,7 +357,7 @@ _tcb_dynamic_params() {
 
 _tcb_define_alias() {
     export -f _tcb_dynamic_params
-    alias torizoncore-builder='docker run --rm '"${_TCB_INTERACTIVE_FLAGS}"' '"${_TCB_VOLUMES}"'-v "$(pwd)":/workdir -v '"${_TCB_STORAGE}"':/storage -v /var/run/docker.sock:/var/run/docker.sock'"${_TCB_NETWORK}"'$(_tcb_dynamic_params) '"${_TCB_DOCKER_EXTRA}"' torizon/torizoncore-builder:'"${_TCB_CHOSEN_TAG}"
+    alias torizoncore-builder='docker run --rm '"${_TCB_INTERACTIVE_FLAGS}"' '"${_TCB_VOLUMES}"'-v "$(pwd)":/workdir -v '"${_TCB_STORAGE}"':/storage -v /var/run/docker.sock:/var/run/docker.sock'"${_TCB_NETWORK}"'$(_tcb_dynamic_params) '"${_TCB_DOCKER_EXTRA}"" ${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:""${_TCB_CHOSEN_TAG}"
 }
 
 _tcb_print_final_messages() {
