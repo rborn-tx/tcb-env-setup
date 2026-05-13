@@ -61,7 +61,8 @@ _tcb_teardown() {
         unset -f _tcb_get_latest_tag
         unset -f _tcb_init_defaults
         unset -f _tcb_load_completion_if_latest
-        unset -f _tcb_load_tags
+        unset -f _tcb_load_local_tags
+        unset -f _tcb_load_remote_tags
         unset -f _tcb_main
         unset -f _tcb_parse_args
         unset -f _tcb_print_final_messages
@@ -270,64 +271,109 @@ _tcb_validate_inputs() {
     return 0
 }
 
-_tcb_load_tags() {
+_tcb_load_local_tags() {
+    _TCB_LOCAL_TAGS=$(docker images "${_TCB_NAMESPACE}/${_TCB_IMAGENAME}" --format "{{.Tag}}" | sed -n '/^[0-9]/p')
+    _TCB_LATEST_LOCAL=$(_tcb_get_latest_tag "${_TCB_LOCAL_TAGS}")
+    _tcb_debug "Local tags: " ${_TCB_LOCAL_TAGS}
+    _tcb_debug "Latest local tag: ${_TCB_LATEST_LOCAL}"
+}
+
+_tcb_load_remote_tags() {
     _TCB_REMOTE_TAGS=$(curl -L -s "https://registry.hub.docker.com/v2/namespaces/${_TCB_NAMESPACE}/repositories/${_TCB_IMAGENAME}/tags" \
                            | sed -n -e 's/\("name"\) *: *\("[^"]\+"\)/\n\1:\2\n/gp' \
                            | sed -n -e 's/"name":"\([^"]\+\)"/\1/p')
-    _TCB_LOCAL_TAGS=$(docker images "${_TCB_NAMESPACE}/${_TCB_IMAGENAME}" --format "{{.Tag}}" | sed -n '/^[0-9]/p')
+    _TCB_LATEST_REMOTE=$(_tcb_get_latest_tag "${_TCB_REMOTE_TAGS}")
     _tcb_debug "Remote tags: " ${_TCB_REMOTE_TAGS}
-    _tcb_debug "Local tags: " ${_TCB_LOCAL_TAGS}
+    _tcb_debug "Latest remote tag: ${_TCB_LATEST_REMOTE}"
 }
 
 _tcb_get_latest_tag() {
-    local _tcb_latest="" _tcb_tag=""
+    local _tcb_tag=""
+    local _tcb_latest=""
+    local _tcb_major="" _tcb_minor="" _tcb_patch=""
+    local _tcb_score=0 _tcb_latest_score=-1
+
     for _tcb_tag in $(echo "$@"); do
-        if [[ ${_tcb_tag} != *"."* ]]; then
-            if [[ ${_tcb_tag} -gt ${_tcb_latest} ]]; then
-                _tcb_latest=${_tcb_tag}
-            fi
+        case "${_tcb_tag}" in
+            *[!0-9.]*|.*|*..*|*.)
+                continue
+                ;;
+            *.*.*.*)
+                continue
+                ;;
+            *.*.*)
+                ;;
+            *)
+                continue
+                ;;
+        esac
+
+        _tcb_major=${_tcb_tag%%.*}
+        _tcb_minor=${_tcb_tag#*.}
+        _tcb_minor=${_tcb_minor%%.*}
+        _tcb_patch=${_tcb_tag##*.}
+
+        [ -n "${_tcb_major}" ] || continue
+        [ -n "${_tcb_minor}" ] || continue
+        [ -n "${_tcb_patch}" ] || continue
+
+        # Assumes each numeric component is in the 0-99 range.
+        _tcb_score=$((_tcb_major * 10000 + _tcb_minor * 100 + _tcb_patch))
+        if [ "${_tcb_score}" -gt "${_tcb_latest_score}" ]; then
+            _tcb_latest=${_tcb_tag}
+            _tcb_latest_score=${_tcb_score}
         fi
     done
+
     [ -n "${_tcb_latest}" ] || return 1
     echo "${_tcb_latest}"
 }
 
 _tcb_choose_tag() {
-    local yn
+    _tcb_load_local_tags
 
-    _TCB_LATEST_REMOTE=$(_tcb_get_latest_tag "${_TCB_REMOTE_TAGS}")
-    _tcb_debug "Latest remote tag: ${_TCB_LATEST_REMOTE}"
-
-    if [[ -z ${_TCB_LOCAL_TAGS} && -z ${_TCB_AUTO_MODE} && -z ${_TCB_USER_TAG} ]]; then
+    if [[ -z ${_TCB_LATEST_LOCAL} && -z ${_TCB_AUTO_MODE} && -z ${_TCB_USER_TAG} ]]; then
+	# Official tag IS NOT installed; just install it.
         echo "TorizonCore Builder is not installed. Pulling the latest version from Docker Hub..."
+	_tcb_load_remote_tags
         _TCB_PULL_REMOTE=true
         _TCB_CHOSEN_TAG=${_TCB_LATEST_REMOTE}
 
-    elif [[ -n ${_TCB_LOCAL_TAGS} && -z ${_TCB_AUTO_MODE} && -z ${_TCB_USER_TAG} ]]; then
-        _TCB_LATEST_LOCAL=$(_tcb_get_latest_tag "${_TCB_LOCAL_TAGS}")
-	_tcb_debug "Latest local tag: ${_TCB_LATEST_LOCAL}"
-	# TODO: Make the Y option the default; if the users hits enter alone, consider the answer to be yes.
-        echo -n "You may have an outdated version installed. Would you like to check for updates online? [y/n] "
-        read -r yn
-        case ${yn} in
-            [Yy]*)
-                _TCB_PULL_REMOTE=true
-                _TCB_CHOSEN_TAG=${_TCB_LATEST_REMOTE}
-                ;;
-            [Nn]*)
-                _TCB_PULL_REMOTE=false
-                _TCB_CHOSEN_TAG=${_TCB_LATEST_LOCAL}
-                ;;
-            *)
-                echo "Please answer yes or no."
-                _tcb_cleanup
-                return 1
-                ;;
-        esac
+    elif [[ -n ${_TCB_LATEST_LOCAL} && -z ${_TCB_AUTO_MODE} && -z ${_TCB_USER_TAG} ]]; then
+	# Official tag IS ALREADY installed; evaluate if an update is needed.
+	_tcb_load_remote_tags
+	if [[ ${_TCB_LATEST_LOCAL} == ${_TCB_LATEST_REMOTE} ]]; then
+	    echo "TorizonCore Builder is already up-to-date."
+            _TCB_PULL_REMOTE=false
+            _TCB_CHOSEN_TAG=${_TCB_LATEST_LOCAL}
+	else
+	    echo "You have an outdated version of the tool installed (${_TCB_LATEST_LOCAL})."
+	    echo -n "Would you like to download the latest version? [Y/n] "
+	    local yn
+            read -r yn
+            case ${yn} in
+		[Yy]*|"")
+                    _TCB_PULL_REMOTE=true
+                    _TCB_CHOSEN_TAG=${_TCB_LATEST_REMOTE}
+                    ;;
+		[Nn]*)
+                    _TCB_PULL_REMOTE=false
+                    _TCB_CHOSEN_TAG=${_TCB_LATEST_LOCAL}
+                    ;;
+		*)
+                    echo "Please answer yes or no."
+                    _tcb_cleanup
+                    return 1
+                    ;;
+            esac
+	fi
+
+    elif [[ ${_TCB_AUTO_MODE} == "remote" ]]; then
+	_tcb_load_remote_tags
+        _TCB_PULL_REMOTE=true
+        _TCB_CHOSEN_TAG=${_TCB_LATEST_REMOTE}
 
     elif [[ ${_TCB_AUTO_MODE} == "local" ]]; then
-        _TCB_LATEST_LOCAL=$(_tcb_get_latest_tag "${_TCB_LOCAL_TAGS}")
-	_tcb_debug "Latest local tag: ${_TCB_LATEST_LOCAL}"
         if [[ -z ${_TCB_LATEST_LOCAL} ]]; then
             echo "Error: no local versions found!"
             _tcb_cleanup
@@ -336,16 +382,12 @@ _tcb_choose_tag() {
         _TCB_PULL_REMOTE=false
         _TCB_CHOSEN_TAG=${_TCB_LATEST_LOCAL}
 
-    elif [[ ${_TCB_AUTO_MODE} == "remote" ]]; then
-        _TCB_PULL_REMOTE=true
-        _TCB_CHOSEN_TAG=${_TCB_LATEST_REMOTE}
-
     elif [[ -n ${_TCB_USER_TAG} ]]; then
         _TCB_PULL_REMOTE=true
         _TCB_CHOSEN_TAG=${_TCB_USER_TAG}
     fi
 
-    _tcb_debug "Chosen tag: ${_TCB_CHOSEN_TAG}"
+    _tcb_debug "Chosen tag: ${_TCB_CHOSEN_TAG:-None}"
 
     return 0
 }
@@ -355,8 +397,14 @@ _tcb_pull_if_needed() {
 
     if [[ ${_TCB_PULL_REMOTE} == true ]]; then
         echo -e "Pulling TorizonCore Builder..."
-        if docker pull "${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}"; then
+	if [[ -z ${_TCB_CHOSEN_TAG} ]]; then
+            echo "Error: could not determine image tag to pull!"
+            _tcb_cleanup
+            return 1
+
+	elif docker pull "${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}"; then
             echo -e "Done!\n"
+
         else
             echo "Error: could not pull TorizonCore Builder from Docker Hub!"
             _tcb_cleanup
@@ -369,12 +417,15 @@ _tcb_pull_if_needed() {
 
 _tcb_load_completion_if_latest() {
     if [[ "${_TCB_CHOSEN_TAG}" == "${_TCB_LATEST_REMOTE}" ]]; then
+	echo "Loading completion script."
         local tmp_file
         tmp_file=$(mktemp) || return
         if curl -sL https://raw.githubusercontent.com/toradex/tcb-env-setup/master/torizoncore-builder-completion.bash -o "${tmp_file}" 2>/dev/null; then
             source "${tmp_file}" 2>/dev/null
         fi
         rm -f "${tmp_file}"
+    else
+	echo "Completion will not be available because installed version of the tool is not the latest."
     fi
 }
 
@@ -414,7 +465,7 @@ _tcb_print_final_messages() {
     fi
 
     cat <<EOF
-Setup complete. TorizonCore Builder is ready.
+Setup complete. TorizonCore Builder is ready to be used.
 
 == Storage
    Internal status and image customizations will be stored in ${storage_desc}.
@@ -439,7 +490,7 @@ _tcb_main() {
 
     if ! _tcb_parse_args "$@"; then
         _tcb_teardown
-        return
+        return 1
     fi
 
     if [[ ${_TCB_AUTO_MODE} != "local" ]]; then
@@ -449,19 +500,17 @@ _tcb_main() {
 
     if ! _tcb_validate_inputs "$@"; then
         _tcb_teardown
-        return
+        return 1
     fi
 
-    # TODO: Avoid this call when running in "local" mode.
-    _tcb_load_tags
     if ! _tcb_choose_tag; then
         _tcb_teardown
-        return
+        return 1
     fi
 
-    if ! _tcb_pull_if_needed; then
+    if ! _tcb_maybe_pull_image; then
         _tcb_teardown
-        return
+        return 1
     fi
 
     # TODO: Consider putting the completion script inside the container image.
