@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
 _tcb_check_sourced() {
     _TCB_SOURCED=false
@@ -18,7 +18,8 @@ _tcb_check_sourced() {
     fi
 
     if [ "${_TCB_SOURCED}" = "false" ]; then
-        echo "Error: don't run $0, source it."
+        echo "Error: don't run $0, source it:"
+        echo "$ . tcb-env-setup.sh"
         exit 1
     fi
 }
@@ -81,7 +82,7 @@ _tcb_debug() {
 
 _tcb_usage() {
     cat <<EOF
-Usage: source tcb-env-setup.sh [OPTIONS] [-- <docker_options>]
+Usage: . tcb-env-setup.sh [OPTIONS] [-- <docker_options>]
 
 Optional arguments:
   -a <value>: select auto mode
@@ -132,22 +133,18 @@ EOF
 _tcb_check_updated() {
     [ ! -f "$1" ] && return
 
-    local target_url="https://raw.githubusercontent.com/toradex/tcb-env-setup/master/tcb-env-setup.sh"
-    local tmp_file
-    tmp_file=$(mktemp) || return
+    _tcb_target_url="https://raw.githubusercontent.com/toradex/tcb-env-setup/master/tcb-env-setup.sh"
+    _tcb_tmp_file=$(mktemp) || return
 
-    local status_code
-    status_code=$(curl -sL -o "${tmp_file}" -w '%{http_code}' "${target_url}")
-    local remote_md5sum
-    remote_md5sum=$(md5sum "${tmp_file}" | cut -d ' ' -f 1)
-    local local_md5sum
-    local_md5sum=$(md5sum "$1" | cut -d ' ' -f 1)
-    rm -f "${tmp_file}"
+    _tcb_status_code=$(curl -sL -o "${_tcb_tmp_file}" -w '%{http_code}' "${_tcb_target_url}")
+    _tcb_remote_cksum=$(cksum "${_tcb_tmp_file}" | cut -d ' ' -f 1)
+    _tcb_local_cksum=$(cksum "$1" | cut -d ' ' -f 1)
+    rm -f "${_tcb_tmp_file}"
 
-    if [ "${status_code}" -eq 200 -a "${remote_md5sum}" != "${local_md5sum}" ]; then
+    if [ "${_tcb_status_code}" -eq 200 ] && [ "${_tcb_remote_cksum}" != "${_tcb_local_cksum}" ]; then
         cat <<EOF
 WARNING: This setup script is outdated. To update it, run:
-   $ wget -O tcb-env-setup.sh ${target_url}
+   $ wget -O tcb-env-setup.sh ${_tcb_target_url}
 
 EOF
     fi
@@ -184,7 +181,7 @@ _tcb_init_defaults() {
 }
 
 _tcb_parse_args() {
-    while [[ $# -gt 0 ]]; do
+    while [ $# -gt 0 ]; do
         case "$1" in
             -a)
                 _TCB_AUTO_MODE=$2
@@ -231,40 +228,51 @@ _tcb_parse_args() {
 }
 
 _tcb_set_script_path() {
-    if [ -z "${ZSH_VERSION-}" ]; then
-        _TCB_SCRIPT_PATH="${PWD}/${BASH_SOURCE[0]}"
-    else
+    if [ -n "${ZSH_VERSION-}" ]; then
         _TCB_SCRIPT_PATH="${(%):-%x}"
+    elif [ -n "$0" ]; then
+        case "$0" in
+            /*) _TCB_SCRIPT_PATH="$0" ;;
+            *) _TCB_SCRIPT_PATH="${PWD}/$0" ;;
+        esac
+    else
+        _TCB_SCRIPT_PATH=""
     fi
 }
 
 _tcb_validate_inputs() {
-    if [[ ${_TCB_AUTO_MODE} = "empty" ]] || [[ ${_TCB_USER_TAG} = "empty" ]] || \
-       [[ ${_TCB_STORAGE} = "empty" ]]; then
+    if [ "${_TCB_AUTO_MODE}" = "empty" ] || [ "${_TCB_USER_TAG}" = "empty" ] || \
+       [ "${_TCB_STORAGE}" = "empty" ]; then
         _tcb_usage
         _tcb_cleanup
         return 1
     fi
 
-    if [[ -n ${_TCB_AUTO_MODE} && -n ${_TCB_USER_TAG} ]]; then
+    if [ -n "${_TCB_AUTO_MODE}" ] && [ -n "${_TCB_USER_TAG}" ]; then
         echo "Error: -a and -t are mutually exclusive. Please only use one flag at a time."
         _tcb_cleanup
         return 1
     fi
 
-    if [[ -n ${_TCB_AUTO_MODE} && ${_TCB_AUTO_MODE} != "local" && ${_TCB_AUTO_MODE} != "remote" ]]; then
+    if [ -n "${_TCB_AUTO_MODE}" ] && [ "${_TCB_AUTO_MODE}" != "local" ] && [ "${_TCB_AUTO_MODE}" != "remote" ]; then
         echo "Error: unrecognized value ${_TCB_AUTO_MODE} for -a"
         _tcb_cleanup
         return 1
     fi
 
-    if [[ ${_TCB_STORAGE} != /* && ! ${_TCB_STORAGE} =~ ^[a-zA-Z][a-zA-Z0-9_.-]*$ ]]; then
+    case "${_TCB_STORAGE}" in
+        /*)
+            ;;
+        [a-zA-Z][a-zA-Z0-9_.-]*)
+            ;;
+        *)
         echo "Error: \"${_TCB_STORAGE}\" storage must be an absolute directory or a valid Docker volume name."
         _tcb_cleanup
         return 1
-    fi
+        ;;
+    esac
 
-    if [ "${_TCB_UNDER_WINDOWS}" = "true" -a $# -eq 0 ]; then
+    if [ "${_TCB_UNDER_WINDOWS}" = "true" ] && [ $# -eq 0 ]; then
         echo "Warning: If you intend to use torizoncore-builder as a server (listening to ports), then you should pass extra parameters to \"docker run\" (via the -- switch)."
     fi
 
@@ -288,10 +296,13 @@ _tcb_load_remote_tags() {
 }
 
 _tcb_get_latest_tag() {
-    local _tcb_tag=""
-    local _tcb_latest=""
-    local _tcb_major="" _tcb_minor="" _tcb_patch=""
-    local _tcb_score=0 _tcb_latest_score=-1
+    _tcb_tag=""
+    _tcb_latest=""
+    _tcb_major=""
+    _tcb_minor=""
+    _tcb_patch=""
+    _tcb_score=0
+    _tcb_latest_score=-1
 
     for _tcb_tag in $(echo "$@"); do
         case "${_tcb_tag}" in
@@ -332,26 +343,26 @@ _tcb_get_latest_tag() {
 _tcb_choose_tag() {
     _tcb_load_local_tags
 
-    if [[ -z ${_TCB_LATEST_LOCAL} && -z ${_TCB_AUTO_MODE} && -z ${_TCB_USER_TAG} ]]; then
+    if [ -z "${_TCB_LATEST_LOCAL}" ] && [ -z "${_TCB_AUTO_MODE}" ] && [ -z "${_TCB_USER_TAG}" ]; then
 	# Official tag IS NOT installed; just install it.
         echo "TorizonCore Builder is not installed. Pulling the latest version from Docker Hub..."
 	_tcb_load_remote_tags
         _TCB_PULL_REMOTE=true
         _TCB_CHOSEN_TAG=${_TCB_LATEST_REMOTE}
 
-    elif [[ -n ${_TCB_LATEST_LOCAL} && -z ${_TCB_AUTO_MODE} && -z ${_TCB_USER_TAG} ]]; then
+    elif [ -n "${_TCB_LATEST_LOCAL}" ] && [ -z "${_TCB_AUTO_MODE}" ] && [ -z "${_TCB_USER_TAG}" ]; then
 	# Official tag IS ALREADY installed; evaluate if an update is needed.
 	_tcb_load_remote_tags
-	if [[ ${_TCB_LATEST_LOCAL} == ${_TCB_LATEST_REMOTE} ]]; then
+		if [ "${_TCB_LATEST_LOCAL}" = "${_TCB_LATEST_REMOTE}" ]; then
 	    echo "TorizonCore Builder is already up-to-date."
             _TCB_PULL_REMOTE=false
             _TCB_CHOSEN_TAG=${_TCB_LATEST_LOCAL}
 	else
 	    echo "You have an outdated version of the tool installed (${_TCB_LATEST_LOCAL})."
-	    echo -n "Would you like to download the latest version? [Y/n] "
-	    local yn
-            read -r yn
-            case ${yn} in
+		    printf 'Would you like to download the latest version? [Y/n] '
+		    _tcb_yn=""
+            read -r _tcb_yn
+            case ${_tcb_yn} in
 		[Yy]*|"")
                     _TCB_PULL_REMOTE=true
                     _TCB_CHOSEN_TAG=${_TCB_LATEST_REMOTE}
@@ -368,13 +379,13 @@ _tcb_choose_tag() {
             esac
 	fi
 
-    elif [[ ${_TCB_AUTO_MODE} == "remote" ]]; then
+    elif [ "${_TCB_AUTO_MODE}" = "remote" ]; then
 	_tcb_load_remote_tags
         _TCB_PULL_REMOTE=true
         _TCB_CHOSEN_TAG=${_TCB_LATEST_REMOTE}
 
-    elif [[ ${_TCB_AUTO_MODE} == "local" ]]; then
-        if [[ -z ${_TCB_LATEST_LOCAL} ]]; then
+    elif [ "${_TCB_AUTO_MODE}" = "local" ]; then
+        if [ -z "${_TCB_LATEST_LOCAL}" ]; then
             echo "Error: no local versions found!"
             _tcb_cleanup
             return 1
@@ -382,7 +393,7 @@ _tcb_choose_tag() {
         _TCB_PULL_REMOTE=false
         _TCB_CHOSEN_TAG=${_TCB_LATEST_LOCAL}
 
-    elif [[ -n ${_TCB_USER_TAG} ]]; then
+    elif [ -n "${_TCB_USER_TAG}" ]; then
         _TCB_PULL_REMOTE=true
         _TCB_CHOSEN_TAG=${_TCB_USER_TAG}
     fi
@@ -393,17 +404,17 @@ _tcb_choose_tag() {
 }
 
 _tcb_pull_if_needed() {
-    echo -e "Setting up TorizonCore Builder with version ${_TCB_CHOSEN_TAG}.\n"
+    printf 'Setting up TorizonCore Builder with version %s.\n\n' "${_TCB_CHOSEN_TAG}"
 
-    if [[ ${_TCB_PULL_REMOTE} == true ]]; then
-        echo -e "Pulling TorizonCore Builder..."
-	if [[ -z ${_TCB_CHOSEN_TAG} ]]; then
+    if [ "${_TCB_PULL_REMOTE}" = "true" ]; then
+        printf 'Pulling TorizonCore Builder...\n'
+		if [ -z "${_TCB_CHOSEN_TAG}" ]; then
             echo "Error: could not determine image tag to pull!"
             _tcb_cleanup
             return 1
 
 	elif docker pull "${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}"; then
-            echo -e "Done!\n"
+            printf 'Done!\n\n'
 
         else
             echo "Error: could not pull TorizonCore Builder from Docker Hub!"
@@ -416,14 +427,13 @@ _tcb_pull_if_needed() {
 }
 
 _tcb_load_completion_if_latest() {
-    if [[ "${_TCB_CHOSEN_TAG}" == "${_TCB_LATEST_REMOTE}" ]]; then
+    if [ "${_TCB_CHOSEN_TAG}" = "${_TCB_LATEST_REMOTE}" ]; then
 	echo "Loading completion script."
-        local tmp_file
-        tmp_file=$(mktemp) || return
-        if curl -sL https://raw.githubusercontent.com/toradex/tcb-env-setup/master/torizoncore-builder-completion.bash -o "${tmp_file}" 2>/dev/null; then
-            source "${tmp_file}" 2>/dev/null
+        _tcb_tmp_file=$(mktemp) || return
+        if curl -sL https://raw.githubusercontent.com/toradex/tcb-env-setup/master/torizoncore-builder-completion.bash -o "${_tcb_tmp_file}" 2>/dev/null; then
+            . "${_tcb_tmp_file}" 2>/dev/null
         fi
-        rm -f "${tmp_file}"
+        rm -f "${_tcb_tmp_file}"
     else
 	echo "Completion will not be available because installed version of the tool is not the latest."
     fi
@@ -432,43 +442,45 @@ _tcb_load_completion_if_latest() {
 _tcb_define_command() {
     TCB_COMMAND_BASE=${_TCB_RUN_CMD}
     TCB_COMMAND_ARGS=""
-    TCB_COMMAND_ARGS+=${_TCB_OPT_RM:+" ${_TCB_OPT_RM}"}
-    TCB_COMMAND_ARGS+=${_TCB_OPT_DEPLOY_VOL:+" ${_TCB_OPT_DEPLOY_VOL}"}
-    TCB_COMMAND_ARGS+=${_TCB_OPT_WORKDIR_VOL:+" ${_TCB_OPT_WORKDIR_VOL}"}
-    TCB_COMMAND_ARGS+=${_TCB_OPT_STORAGE_VOL:+" ${_TCB_OPT_STORAGE_VOL}"}
-    TCB_COMMAND_ARGS+=${_TCB_OPT_DAEMON_VOL:+" ${_TCB_OPT_DAEMON_VOL}"}
-    TCB_COMMAND_ARGS+=${_TCB_OPT_NETWORK:+" ${_TCB_OPT_NETWORK}"}
-    TCB_COMMAND_ARGS+=${_TCB_OPT_SELFNAME:+" ${_TCB_OPT_SELFNAME}"}
-    TCB_COMMAND_ARGS+=${_TCB_DOCKER_EXTRA:+" ${_TCB_DOCKER_EXTRA}"}
-    TCB_COMMAND_ARGS+=" ${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}"
+    TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS}${_TCB_OPT_RM:+" ${_TCB_OPT_RM}"}"
+    TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS}${_TCB_OPT_DEPLOY_VOL:+" ${_TCB_OPT_DEPLOY_VOL}"}"
+    TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS}${_TCB_OPT_WORKDIR_VOL:+" ${_TCB_OPT_WORKDIR_VOL}"}"
+    TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS}${_TCB_OPT_STORAGE_VOL:+" ${_TCB_OPT_STORAGE_VOL}"}"
+    TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS}${_TCB_OPT_DAEMON_VOL:+" ${_TCB_OPT_DAEMON_VOL}"}"
+    TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS}${_TCB_OPT_NETWORK:+" ${_TCB_OPT_NETWORK}"}"
+    TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS}${_TCB_OPT_SELFNAME:+" ${_TCB_OPT_SELFNAME}"}"
+    TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS}${_TCB_DOCKER_EXTRA:+" ${_TCB_DOCKER_EXTRA}"}"
+    TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS} ${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}"
     TCB_COMMAND="${TCB_COMMAND_BASE}${TCB_COMMAND_ARGS}"
 
     # Define main command:
     torizoncore-builder() {
         __tcb_flags=""
         if [ -t 0 ]; then
-            __tcb_flags+=" -i"
+            __tcb_flags="${__tcb_flags} -i"
         fi
         if [ -t 1 ] && [ -t 2 ]; then
-            __tcb_flags+=" -t"
+            __tcb_flags="${__tcb_flags} -t"
         fi
         eval "${TCB_COMMAND_BASE}${__tcb_flags}${TCB_COMMAND_ARGS}" "$@"
     }
-    export -f torizoncore-builder
+    export -f torizoncore-builder 2>/dev/null || :
 }
 
 _tcb_print_final_messages() {
-    local storage_desc="${_TCB_STORAGE}"
+    _tcb_storage_desc="${_TCB_STORAGE}"
 
-    if [[ ${storage_desc} =~ ^[a-zA-Z][a-zA-Z0-9_.-]*$ ]]; then
-        storage_desc="Docker volume named '${storage_desc}'"
-    fi
+    case "${_tcb_storage_desc}" in
+        [a-zA-Z][a-zA-Z0-9_.-]*)
+        _tcb_storage_desc="Docker volume named '${_tcb_storage_desc}'"
+        ;;
+    esac
 
     cat <<EOF
 Setup complete. TorizonCore Builder is ready to be used.
 
 == Storage
-   Internal status and image customizations will be stored in ${storage_desc}.
+   Internal status and image customizations will be stored in ${_tcb_storage_desc}.
 
 == Workspace Scope
    - Only files and directories in the current working directory or below are
@@ -493,7 +505,7 @@ _tcb_main() {
         return 1
     fi
 
-    if [[ ${_TCB_AUTO_MODE} != "local" ]]; then
+    if [ "${_TCB_AUTO_MODE}" != "local" ]; then
         _tcb_set_script_path
         _tcb_check_updated "${_TCB_SCRIPT_PATH}"
     fi
