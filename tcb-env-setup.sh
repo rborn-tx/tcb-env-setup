@@ -29,6 +29,7 @@ _tcb_cleanup() {
     unset _TCB_AUTO_MODE
     unset _TCB_CHOSEN_TAG
     unset _TCB_DOCKER_EXTRA
+    unset _TCB_FUNCTION_NAME
     unset _TCB_ID
     unset _TCB_IMAGENAME
     unset _TCB_LATEST_LOCAL
@@ -37,12 +38,11 @@ _tcb_cleanup() {
     unset _TCB_NAMESPACE
     unset _TCB_OPT_DAEMON_VOL
     unset _TCB_OPT_DEPLOY_VOL
-    unset _TCB_OPT_SELFNAME
     unset _TCB_OPT_NETWORK
     unset _TCB_OPT_RM
+    unset _TCB_OPT_SELFNAME
     unset _TCB_OPT_STORAGE_VOL
     unset _TCB_OPT_WORKDIR_VOL
-    unset _TCB_FUNCTION_NAME
     unset _TCB_PULL_REMOTE
     unset _TCB_REMOTE_TAGS
     unset _TCB_RUN_CMD
@@ -63,13 +63,13 @@ _tcb_teardown() {
         unset -f _tcb_detect_platform
         unset -f _tcb_get_latest_tag
         unset -f _tcb_init_defaults
-        unset -f _tcb_load_completion_if_latest
         unset -f _tcb_load_local_tags
         unset -f _tcb_load_remote_tags
         unset -f _tcb_main
+        unset -f _tcb_maybe_load_completion
+        unset -f _tcb_maybe_pull_image
         unset -f _tcb_parse_args
         unset -f _tcb_print_final_messages
-        unset -f _tcb_pull_if_needed
         unset -f _tcb_set_script_path
         unset -f _tcb_usage
         unset -f _tcb_validate_inputs
@@ -421,7 +421,7 @@ _tcb_choose_tag() {
     return 0
 }
 
-_tcb_pull_if_needed() {
+_tcb_maybe_pull_image() {
     printf 'Setting up TorizonCore Builder with version %s.\n\n' "${_TCB_CHOSEN_TAG}"
 
     if [ "${_TCB_PULL_REMOTE}" = "true" ]; then
@@ -443,8 +443,14 @@ _tcb_pull_if_needed() {
     return 0
 }
 
-_tcb_load_completion_if_latest() {
-    if [ "${_TCB_CHOSEN_TAG}" = "${_TCB_LATEST_REMOTE}" ]; then
+_tcb_maybe_load_completion() {
+    if [ -z "${BASH_VERSION-}" ] && [ -z "${ZSH_VERSION-}" ]; then
+        echo "Completion will not be available because the current shell is not supported (requires bash or zsh); " \
+             "please get in contact with Toradex support if you need this feature on a different shell."
+        return
+    fi
+
+    elif [ "${_TCB_CHOSEN_TAG}" = "${_TCB_LATEST_REMOTE}" ]; then
         echo "Loading completion script."
         _tcb_tmp_file=$(mktemp) || return
         if curl -sL https://raw.githubusercontent.com/toradex/tcb-env-setup/master/torizoncore-builder-completion.bash -o "${_tcb_tmp_file}" 2>/dev/null; then
@@ -452,6 +458,7 @@ _tcb_load_completion_if_latest() {
             . "${_tcb_tmp_file}" 2>/dev/null
         fi
         rm -f "${_tcb_tmp_file}"
+
     else
         echo "Completion will not be available because installed version of the tool is not the latest."
     fi
@@ -550,7 +557,7 @@ _tcb_main() {
     fi
 
     # TODO: Consider putting the completion script inside the container image.
-    _tcb_load_completion_if_latest
+    _tcb_maybe_load_completion
     _tcb_define_command
     _tcb_print_final_messages
 
