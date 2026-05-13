@@ -55,6 +55,7 @@ _tcb_teardown() {
         unset -f _tcb_check_sourced
         unset -f _tcb_check_updated
         unset -f _tcb_choose_tag
+        unset -f _tcb_debug
         unset -f _tcb_define_command
         unset -f _tcb_detect_platform
         unset -f _tcb_get_latest_tag
@@ -69,6 +70,12 @@ _tcb_teardown() {
         unset -f _tcb_usage
         unset -f _tcb_validate_inputs
     } 2>/dev/null
+}
+
+_tcb_debug() {
+    if [ "${TCB_DEBUG}" = "1" ]; then
+	echo "[DEBUG] $*"
+    fi
 }
 
 _tcb_usage() {
@@ -268,6 +275,8 @@ _tcb_load_tags() {
                            | sed -n -e 's/\("name"\) *: *\("[^"]\+"\)/\n\1:\2\n/gp' \
                            | sed -n -e 's/"name":"\([^"]\+\)"/\1/p')
     _TCB_LOCAL_TAGS=$(docker images "${_TCB_NAMESPACE}/${_TCB_IMAGENAME}" --format "{{.Tag}}" | sed -n '/^[0-9]/p')
+    _tcb_debug "Remote tags: " ${_TCB_REMOTE_TAGS}
+    _tcb_debug "Local tags: " ${_TCB_LOCAL_TAGS}
 }
 
 _tcb_get_latest_tag() {
@@ -287,6 +296,7 @@ _tcb_choose_tag() {
     local yn
 
     _TCB_LATEST_REMOTE=$(_tcb_get_latest_tag "${_TCB_REMOTE_TAGS}")
+    _tcb_debug "Latest remote tag: ${_TCB_LATEST_REMOTE}"
 
     if [[ -z ${_TCB_LOCAL_TAGS} && -z ${_TCB_AUTO_MODE} && -z ${_TCB_USER_TAG} ]]; then
         echo "TorizonCore Builder is not installed. Pulling the latest version from Docker Hub..."
@@ -295,6 +305,8 @@ _tcb_choose_tag() {
 
     elif [[ -n ${_TCB_LOCAL_TAGS} && -z ${_TCB_AUTO_MODE} && -z ${_TCB_USER_TAG} ]]; then
         _TCB_LATEST_LOCAL=$(_tcb_get_latest_tag "${_TCB_LOCAL_TAGS}")
+	_tcb_debug "Latest local tag: ${_TCB_LATEST_LOCAL}"
+	# TODO: Make the Y option the default; if the users hits enter alone, consider the answer to be yes.
         echo -n "You may have an outdated version installed. Would you like to check for updates online? [y/n] "
         read -r yn
         case ${yn} in
@@ -315,6 +327,7 @@ _tcb_choose_tag() {
 
     elif [[ ${_TCB_AUTO_MODE} == "local" ]]; then
         _TCB_LATEST_LOCAL=$(_tcb_get_latest_tag "${_TCB_LOCAL_TAGS}")
+	_tcb_debug "Latest local tag: ${_TCB_LATEST_LOCAL}"
         if [[ -z ${_TCB_LATEST_LOCAL} ]]; then
             echo "Error: no local versions found!"
             _tcb_cleanup
@@ -331,6 +344,8 @@ _tcb_choose_tag() {
         _TCB_PULL_REMOTE=true
         _TCB_CHOSEN_TAG=${_TCB_USER_TAG}
     fi
+
+    _tcb_debug "Chosen tag: ${_TCB_CHOSEN_TAG}"
 
     return 0
 }
