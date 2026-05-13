@@ -42,6 +42,7 @@ _tcb_cleanup() {
     unset _TCB_OPT_RM
     unset _TCB_OPT_STORAGE_VOL
     unset _TCB_OPT_WORKDIR_VOL
+    unset _TCB_FUNCTION_NAME
     unset _TCB_PULL_REMOTE
     unset _TCB_REMOTE_TAGS
     unset _TCB_RUN_CMD
@@ -122,6 +123,9 @@ Optional arguments:
       publishing to be set up if the tool is to act as a server. This flag
       disables the default behavior (which is relevant under Linux).
 
+  -P: use portable command name
+      Export command as "torizoncorebuilder" instead of "torizoncore-builder".
+
   -- <docker_options>: extra options to be passed to "docker run".
        Parameters after -- are simply forwarded to the "docker run"
        invocation in the alias that the script creates.
@@ -181,6 +185,7 @@ _tcb_init_defaults() {
 
     _TCB_NAMESPACE=${TCB_NAMESPACE:-"torizon"}
     _TCB_IMAGENAME=${TCB_IMAGENAME:-"torizoncore-builder"}
+    _TCB_FUNCTION_NAME="torizoncore-builder"
 }
 
 _tcb_parse_args() {
@@ -212,6 +217,10 @@ _tcb_parse_args() {
                 ;;
             -n)
                 _TCB_OPT_NETWORK=""
+                shift
+                ;;
+            -P)
+                _TCB_FUNCTION_NAME="torizoncorebuilder"
                 shift
                 ;;
             --)
@@ -463,19 +472,23 @@ _tcb_define_command() {
     # shellcheck disable=SC2034
     TCB_COMMAND="${TCB_COMMAND_BASE}${TCB_COMMAND_ARGS}"
 
-    # TODO: Define a new switch for exporting a "torizoncorebuilder" function instead; this would be required for shells not supporting dash characters in function names such as shell `dash`.
-    # Define main command:
-    torizoncore-builder() {
-        __tcb_flags=""
-        if [ -t 0 ]; then
-            __tcb_flags="${__tcb_flags} -i"
-        fi
-        if [ -t 1 ] && [ -t 2 ]; then
-            __tcb_flags="${__tcb_flags} -t"
-        fi
-        eval "${TCB_COMMAND_BASE}${__tcb_flags}${TCB_COMMAND_ARGS} $*"
-    }
-    export -f torizoncore-builder 2>/dev/null || :
+    if [ "${_TCB_FUNCTION_NAME}" = "torizoncorebuilder" ]; then
+        torizoncorebuilder() {
+            __tcb_flags=""
+            [ -t 0 ] && __tcb_flags="${__tcb_flags} -i"
+            [ -t 1 ] && [ -t 2 ] && __tcb_flags="${__tcb_flags} -t"
+            eval "${TCB_COMMAND_BASE}${__tcb_flags}${TCB_COMMAND_ARGS} $*"
+        }
+        export -f torizoncorebuilder 2>/dev/null || :
+    else
+        torizoncore-builder() {
+            __tcb_flags=""
+            [ -t 0 ] && __tcb_flags="${__tcb_flags} -i"
+            [ -t 1 ] && [ -t 2 ] && __tcb_flags="${__tcb_flags} -t"
+            eval "${TCB_COMMAND_BASE}${__tcb_flags}${TCB_COMMAND_ARGS} $*"
+        }
+        export -f torizoncore-builder 2>/dev/null || :
+    fi
 }
 
 _tcb_print_final_messages() {
@@ -500,7 +513,7 @@ Setup complete. TorizonCore Builder is ready to be used.
      are also not visible/accessible to the tool.
 
 == Help
-   - Run: torizoncore-builder -h
+   - Run: ${_TCB_FUNCTION_NAME} -h
    - Docs: https://developer.toradex.com/knowledge-base/torizoncore-builder-tool
 EOF
 }
