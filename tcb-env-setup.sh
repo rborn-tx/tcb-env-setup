@@ -55,6 +55,7 @@ _tcb_cleanup() {
 
 _tcb_teardown() {
     {
+        unset -f _tcb_check_dependencies
         unset -f _tcb_check_sourced
         unset -f _tcb_check_updated
         unset -f _tcb_choose_tag
@@ -153,6 +154,22 @@ WARNING: This setup script is outdated. To update it, run:
 
 EOF
     fi
+}
+
+_tcb_check_dependencies() {
+    if ! command -v curl >/dev/null 2>&1; then
+        echo "Error: required program not found: curl"
+        _tcb_cleanup
+        return 1
+    fi
+
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "Error: required program not found: docker"
+        _tcb_cleanup
+        return 1
+    fi
+
+    return 0
 }
 
 _tcb_detect_platform() {
@@ -532,6 +549,11 @@ _tcb_main() {
     _tcb_init_defaults
 
     if ! _tcb_parse_args "$@"; then
+        _tcb_teardown
+        return 1
+    fi
+
+    if ! _tcb_check_dependencies; then
         _tcb_teardown
         return 1
     fi
