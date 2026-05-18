@@ -68,6 +68,7 @@ _tcb_teardown() {
         unset -f _tcb_load_local_tags
         unset -f _tcb_load_remote_tags
         unset -f _tcb_main
+        unset -f _tcb_main0
         unset -f _tcb_maybe_load_completion
         unset -f _tcb_maybe_pull_image
         unset -f _tcb_parse_args
@@ -164,13 +165,11 @@ EOF
 _tcb_check_dependencies() {
     if ! command -v curl >/dev/null 2>&1; then
         echo "Error: required program not found: curl"
-        _tcb_cleanup
         return 1
     fi
 
     if ! command -v docker >/dev/null 2>&1; then
         echo "Error: required program not found: docker"
-        _tcb_cleanup
         return 1
     fi
 
@@ -256,7 +255,6 @@ _tcb_parse_args() {
                 ;;
             -h|*)
                 _tcb_usage
-                _tcb_cleanup
                 return 1
                 ;;
         esac
@@ -284,19 +282,16 @@ _tcb_validate_inputs() {
     if [ "${_TCB_AUTO_MODE}" = "empty" ] || [ "${_TCB_USER_TAG}" = "empty" ] || \
        [ "${_TCB_STORAGE}" = "empty" ]; then
         _tcb_usage
-        _tcb_cleanup
         return 1
     fi
 
     if [ -n "${_TCB_AUTO_MODE}" ] && [ -n "${_TCB_USER_TAG}" ]; then
         echo "Error: -a and -t are mutually exclusive. Please only use one flag at a time."
-        _tcb_cleanup
         return 1
     fi
 
     if [ -n "${_TCB_AUTO_MODE}" ] && [ "${_TCB_AUTO_MODE}" != "local" ] && [ "${_TCB_AUTO_MODE}" != "remote" ]; then
         echo "Error: unrecognized value ${_TCB_AUTO_MODE} for -a"
-        _tcb_cleanup
         return 1
     fi
 
@@ -307,7 +302,6 @@ _tcb_validate_inputs() {
             ;;
         *)
             echo "Error: \"${_TCB_STORAGE}\" storage must be an absolute directory or a valid Docker volume name."
-            _tcb_cleanup
             return 1
             ;;
     esac
@@ -392,7 +386,6 @@ _tcb_validate_stdin_tty() {
     if [ ! -t 0 ] && [ -z "${_TCB_AUTO_MODE}" ] && [ -z "${_TCB_USER_TAG}" ]; then
         echo "Error: stdin is not attached to a TTY." \
              "For non-interactive usage, either switch -a or -t must be passed."
-        _tcb_cleanup
         return 1
     fi
 
@@ -432,7 +425,6 @@ _tcb_choose_tag() {
                     ;;
                 *)
                     echo "Please answer yes or no."
-                    _tcb_cleanup
                     return 1
                     ;;
             esac
@@ -446,7 +438,6 @@ _tcb_choose_tag() {
     elif [ "${_TCB_AUTO_MODE}" = "local" ]; then
         if [ -z "${_TCB_LATEST_LOCAL}" ]; then
             echo "Error: no local versions found!"
-            _tcb_cleanup
             return 1
         fi
         _TCB_PULL_REMOTE=false
@@ -470,13 +461,11 @@ _tcb_maybe_pull_image() {
 
         if [ -z "${_TCB_CHOSEN_TAG}" ]; then
             echo "Error: could not determine image tag to pull!"
-            _tcb_cleanup
             return 1
         elif docker pull "${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}"; then
             printf 'Done!\n\n'
         else
             echo "Error: could not pull TorizonCore Builder from Docker Hub!"
-            _tcb_cleanup
             return 1
         fi
     fi
@@ -572,56 +561,39 @@ Setup complete. TorizonCore Builder is ready to be used.
 EOF
 }
 
-_tcb_main() {
+_tcb_main0() {
     _tcb_check_sourced
     _tcb_cleanup
     _tcb_detect_platform
     _tcb_init_defaults
 
-    if ! _tcb_parse_args "$@"; then
-        _tcb_teardown
-        return 1
-    fi
-
-    if ! _tcb_check_dependencies; then
-        _tcb_teardown
-        return 1
-    fi
+    _tcb_parse_args "$@" || return 1
+    _tcb_check_dependencies || return 1
 
     if [ "${_TCB_AUTO_MODE}" != "local" ]; then
         _tcb_set_script_path
         _tcb_check_updated "${_TCB_SCRIPT_PATH}"
     fi
 
-    if ! _tcb_validate_inputs "$@"; then
-        _tcb_teardown
-        return 1
-    fi
-
-    if ! _tcb_validate_stdin_tty; then
-        _tcb_teardown
-        return 1
-    fi
-
-    if ! _tcb_choose_tag; then
-        _tcb_teardown
-        return 1
-    fi
-
-    if ! _tcb_maybe_pull_image; then
-        _tcb_teardown
-        return 1
-    fi
+    _tcb_validate_inputs "$@" || return 1
+    _tcb_validate_stdin_tty || return 1
+    _tcb_choose_tag || return 1
+    _tcb_maybe_pull_image || return 1
 
     # TODO: Consider putting the completion script inside the container image.
     _tcb_maybe_load_completion
     _tcb_define_command
     _tcb_print_final_messages
+}
 
+_tcb_main() {
+    _tcb_main0 "$@"
+    _tcb_main_status=$?
     _tcb_cleanup
     _tcb_teardown
     unset -f _tcb_cleanup 2>/dev/null
     unset -f _tcb_teardown 2>/dev/null
+    return "${_tcb_main_status}"
 }
 
 _tcb_main "$@"
