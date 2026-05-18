@@ -43,6 +43,7 @@ _tcb_cleanup() {
     unset _TCB_OPT_SELFNAME
     unset _TCB_OPT_STORAGE_VOL
     unset _TCB_OPT_WORKDIR_VOL
+    unset _TCB_COMPLETION_DISABLED
     unset _TCB_PULL_REMOTE
     unset _TCB_REMOTE_TAGS
     unset _TCB_RUN_CMD
@@ -124,6 +125,9 @@ Optional arguments:
       publishing to be set up if the tool is to act as a server. This flag
       disables the default behavior (which is relevant under Linux).
 
+  -c: disable completion script loading
+      Forcefully disables loading of the shell completion script.
+
   -P: use portable command name
       Export command as "torizoncorebuilder" instead of "torizoncore-builder".
 
@@ -203,6 +207,7 @@ _tcb_init_defaults() {
     _TCB_NAMESPACE=${TCB_NAMESPACE:-"torizon"}
     _TCB_IMAGENAME=${TCB_IMAGENAME:-"torizoncore-builder"}
     _TCB_FUNCTION_NAME="torizoncore-builder"
+    _TCB_COMPLETION_DISABLED=false
 }
 
 _tcb_parse_args() {
@@ -234,6 +239,10 @@ _tcb_parse_args() {
                 ;;
             -n)
                 _TCB_OPT_NETWORK=""
+                shift
+                ;;
+            -c)
+                _TCB_COMPLETION_DISABLED=true
                 shift
                 ;;
             -P)
@@ -318,7 +327,10 @@ _tcb_load_local_tags() {
     _tcb_debug "Latest local tag: ${_TCB_LATEST_LOCAL}"
 }
 
+# TODO: Handle errors in this function and its calls.
 _tcb_load_remote_tags() {
+    [ -n "${_TCB_REMOTE_TAGS}" ] && return 0
+
     _TCB_REMOTE_TAGS=$(curl -L -s "https://registry.hub.docker.com/v2/namespaces/${_TCB_NAMESPACE}/repositories/${_TCB_IMAGENAME}/tags" \
                            | sed -n -e 's/\("name"\) *: *\("[^"]\+"\)/\n\1:\2\n/gp' \
                            | sed -n -e 's/"name":"\([^"]\+\)"/\1/p')
@@ -461,13 +473,20 @@ _tcb_maybe_pull_image() {
 }
 
 _tcb_maybe_load_completion() {
+    if [ "${_TCB_COMPLETION_DISABLED}" = "true" ]; then
+        echo "Completion script loading disabled by user."
+        return
+    fi
+
     if [ -z "${BASH_VERSION-}" ] && [ -z "${ZSH_VERSION-}" ]; then
         echo "Completion will not be available because the current shell is not supported (requires bash or zsh); " \
              "please get in contact with Toradex support if you need this feature on a different shell."
         return
     fi
 
-    elif [ "${_TCB_CHOSEN_TAG}" = "${_TCB_LATEST_REMOTE}" ]; then
+    _tcb_load_remote_tags
+
+    if [ "${_TCB_CHOSEN_TAG}" = "${_TCB_LATEST_REMOTE}" ]; then
         echo "Loading completion script."
         _tcb_tmp_file=$(mktemp) || return
         if curl -sL https://raw.githubusercontent.com/toradex/tcb-env-setup/master/torizoncore-builder-completion.bash -o "${_tcb_tmp_file}" 2>/dev/null; then
@@ -475,7 +494,6 @@ _tcb_maybe_load_completion() {
             . "${_tcb_tmp_file}" 2>/dev/null
         fi
         rm -f "${_tcb_tmp_file}"
-
     else
         echo "Completion will not be available because installed version of the tool is not the latest."
     fi
