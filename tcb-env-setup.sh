@@ -75,6 +75,7 @@ _tcb_teardown() {
         unset -f _tcb_set_script_path
         unset -f _tcb_usage
         unset -f _tcb_validate_inputs
+        unset -f _tcb_validate_stdin_tty
     } 2>/dev/null
 }
 
@@ -387,6 +388,17 @@ _tcb_get_latest_tag() {
     echo "${_tcb_latest}"
 }
 
+_tcb_validate_stdin_tty() {
+    if [ ! -t 0 ] && [ -z "${_TCB_AUTO_MODE}" ] && [ -z "${_TCB_USER_TAG}" ]; then
+        echo "Error: stdin is not attached to a TTY." \
+             "For non-interactive usage, either switch -a or -t must be passed."
+        _tcb_cleanup
+        return 1
+    fi
+
+    return 0
+}
+
 _tcb_choose_tag() {
     _tcb_load_local_tags
 
@@ -582,6 +594,11 @@ _tcb_main() {
     fi
 
     if ! _tcb_validate_inputs "$@"; then
+        _tcb_teardown
+        return 1
+    fi
+
+    if ! _tcb_validate_stdin_tty; then
         _tcb_teardown
         return 1
     fi
