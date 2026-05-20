@@ -39,6 +39,7 @@ _tcb_cleanup() {
     unset _TCB_OPT_DAEMON_VOL
     unset _TCB_OPT_DEPLOY_VOL
     unset _TCB_OPT_NETWORK
+    unset _TCB_OPT_PULL_NEVER
     unset _TCB_OPT_RM
     unset _TCB_OPT_SELFNAME
     unset _TCB_OPT_STORAGE_VOL
@@ -188,6 +189,7 @@ _tcb_init_defaults() {
 
     _TCB_RUN_CMD=${TCB_RUN_CMD:-"docker run"}
     _TCB_OPT_RM=${TCB_OPT_RM:-"--rm"}
+    _TCB_OPT_PULL_NEVER=${TCB_OPT_PULL_NEVER:-"--pull=never"}
     _TCB_OPT_DEPLOY_VOL=${TCB_OPT_DEPLOY_VOL:-"-v /deploy"}
     _TCB_OPT_STORAGE_VOL=${TCB_OPT_STORAGE_VOL:-"-v ${_TCB_STORAGE}:/storage"}
     # shellcheck disable=SC2016
@@ -456,6 +458,13 @@ _tcb_choose_tag() {
 _tcb_maybe_pull_image() {
     printf 'Setting up TorizonCore Builder with version %s.\n\n' "${_TCB_CHOSEN_TAG}"
 
+    if [ "${TCB_NO_PULL}" = "1" ] || [ "${TCB_NO_PULL}" = "true" ]; then
+        # TCB_NO_PULL is user settable (both "1" and "true" are accepted).
+        echo "Pulling of the image was disabled by variable TCB_NO_PULL;" \
+             "make sure image is locally available before invoking TorizonCore Builder."
+        return 0
+    fi
+
     if [ "${_TCB_PULL_REMOTE}" = "true" ]; then
         printf 'Pulling TorizonCore Builder...\n'
 
@@ -504,6 +513,10 @@ _tcb_define_command() {
     TCB_COMMAND_BASE=${_TCB_RUN_CMD}
     TCB_COMMAND_ARGS=""
     TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS}${_TCB_OPT_RM:+" ${_TCB_OPT_RM}"}"
+    if [ "${TCB_NO_PULL}" = "1" ] || [ "${TCB_NO_PULL}" = "true" ]; then
+        # TCB_NO_PULL is user settable (both "1" and "true" are accepted).
+        TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS}${_TCB_OPT_PULL_NEVER:+" ${_TCB_OPT_PULL_NEVER}"}"
+    fi
     TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS}${_TCB_OPT_DEPLOY_VOL:+" ${_TCB_OPT_DEPLOY_VOL}"}"
     TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS}${_TCB_OPT_WORKDIR_VOL:+" ${_TCB_OPT_WORKDIR_VOL}"}"
     TCB_COMMAND_ARGS="${TCB_COMMAND_ARGS}${_TCB_OPT_STORAGE_VOL:+" ${_TCB_OPT_STORAGE_VOL}"}"
