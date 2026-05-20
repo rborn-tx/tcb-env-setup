@@ -213,54 +213,55 @@ _tcb_init_defaults() {
 }
 
 _tcb_parse_args() {
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            -a)
-                _TCB_AUTO_MODE=$2
-                [ "$2" ] || _TCB_AUTO_MODE="empty"
-                shift
-                shift
+    OPTIND=1
+    while getopts ":a:t:s:dncPh" _tcb_opt; do
+        case "${_tcb_opt}" in
+            a)
+                _TCB_AUTO_MODE="${OPTARG}"
                 ;;
-            -t)
-                _TCB_USER_TAG="$2"
-                [ "$2" ] || _TCB_USER_TAG="empty"
-                shift
-                shift
+            t)
+                _TCB_USER_TAG="${OPTARG}"
                 ;;
-            -s)
-                _TCB_STORAGE="$2"
+            s)
+                _TCB_STORAGE="${OPTARG}"
                 _TCB_OPT_STORAGE_VOL="-v ${_TCB_STORAGE}:/storage"
-                [ "$2" ] || _TCB_STORAGE="empty"
-                shift
-                shift
                 ;;
-            -d)
+            d)
                 # TODO: Consider deprecating this switch (or describing use cases for it).
                 _TCB_OPT_DEPLOY_VOL=""
-                shift
                 ;;
-            -n)
+            n)
                 _TCB_OPT_NETWORK=""
-                shift
                 ;;
-            -c)
+            c)
                 _TCB_COMPLETION_DISABLED=true
-                shift
                 ;;
-            -P)
+            P)
                 _TCB_FUNCTION_NAME="torizoncorebuilder"
-                shift
                 ;;
-            --)
-                shift
-                break
+            h)
+                _tcb_usage
+                return 1
                 ;;
-            -h|*)
+            :)
+                case "${OPTARG}" in
+                    a) _TCB_AUTO_MODE="empty" ;;
+                    t) _TCB_USER_TAG="empty" ;;
+                    s) _TCB_STORAGE="empty" ;;
+                    *)
+                        _tcb_usage
+                        return 1
+                        ;;
+                esac
+                ;;
+            \?)
                 _tcb_usage
                 return 1
                 ;;
         esac
     done
+
+    shift $((OPTIND - 1))
 
     _TCB_DOCKER_EXTRA="$*"
     return 0
