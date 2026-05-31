@@ -495,18 +495,36 @@ _tcb_maybe_load_completion() {
         return
     fi
 
+    _compl_script_path="/opt/torizoncore-builder/completion-scripts/torizoncore-builder-completion.bash"
+    if ${_TCB_RUN_CMD} --entrypoint="" --workdir="/" \
+                       "${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}" \
+                       sh -c "test -e ${_compl_script_path}"; then
+        echo "Loading completion script from container image."
+        _tcb_tmp_file=$(mktemp) || return
+        if ${_TCB_RUN_CMD} --entrypoint="" --workdir="/" \
+                           "${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}" \
+                           cat "${_compl_script_path}" > "${_tcb_tmp_file}" 2>/dev/null && [ -s "${_tcb_tmp_file}" ]; then
+            # shellcheck disable=SC1090
+            TCB_FUNCTION_NAME="${_TCB_FUNCTION_NAME}" . "${_tcb_tmp_file}" 2>/dev/null
+        else
+            echo "Failed to load completion script from container image; no completion will be available."
+        fi
+        rm -f "${_tcb_tmp_file}"
+        return
+    fi
+
     _tcb_load_remote_tags
 
     if [ "${_TCB_CHOSEN_TAG}" = "${_TCB_LATEST_REMOTE}" ]; then
-        echo "Loading completion script."
+        echo "Loading completion script from remote repository."
         _tcb_tmp_file=$(mktemp) || return
         if curl -sL https://raw.githubusercontent.com/toradex/tcb-env-setup/master/torizoncore-builder-completion.bash -o "${_tcb_tmp_file}" 2>/dev/null; then
             # shellcheck disable=SC1090
-            . "${_tcb_tmp_file}" 2>/dev/null
+            TCB_FUNCTION_NAME="${_TCB_FUNCTION_NAME}" . "${_tcb_tmp_file}" 2>/dev/null
         fi
         rm -f "${_tcb_tmp_file}"
     else
-        echo "Completion will not be available because installed version of the tool is not the latest."
+        echo "Completion will not be available because selected version of the tool is not the latest official one."
     fi
 }
 
