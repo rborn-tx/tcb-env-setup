@@ -187,9 +187,7 @@ Completion is optional and does not affect the ability to run TorizonCore Builde
 
 ## Contributing
 
-Contributions should keep the script portable and shell-friendly, with attention to POSIX compatibility and automation use cases.
-
-If you are changing behavior, make sure the README examples and option descriptions stay aligned with the script help output and actual runtime behavior.
+See [CONTRIBUTING.md](/opt/shared/rborin/torgit/tcb-env-setup/CONTRIBUTING.md).
 
 ## License
 
