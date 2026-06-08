@@ -5,14 +5,16 @@ _tcb_check_sourced() {
 
     if [ -n "${ZSH_EVAL_CONTEXT}" ]; then
         # zsh
-        case ${ZSH_EVAL_CONTEXT} in *:file) _TCB_SOURCED=true;; esac
+        case ${ZSH_EVAL_CONTEXT} in
+            *:file|*:file:*) _TCB_SOURCED=true ;;
+        esac
     elif [ -n "${KSH_VERSION}" ]; then
         # ksh
         # shellcheck disable=SC2086,SC2296
         [ "$(cd "$(dirname -- "$0")" && pwd -P)/$(basename -- "$0")" != "$(cd "$(dirname -- ${.sh.file})" && pwd -P)/$(basename -- ${.sh.file})" ] && _TCB_SOURCED=true
     elif [ -n "${BASH_VERSION}" ]; then
         # bash
-        (return 0 2>/dev/null) && _TCB_SOURCED=true
+        [ "$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/$(basename -- "${BASH_SOURCE[0]}")" != "$(cd "$(dirname -- "$0")" && pwd -P)/$(basename -- "$0")" ] && _TCB_SOURCED=true
     else
         # All other shells: examine $0 for known shell binary filenames
         case ${0##*/} in sh|dash) _TCB_SOURCED=true;; esac
@@ -74,6 +76,7 @@ _tcb_teardown() {
         unset -f _tcb_maybe_pull_image
         unset -f _tcb_parse_args
         unset -f _tcb_print_final_messages
+        unset -f _tcb_runtime_eval
         unset -f _tcb_set_script_path
         unset -f _tcb_usage
         unset -f _tcb_validate_inputs
@@ -395,6 +398,10 @@ _tcb_validate_stdin_tty() {
     return 0
 }
 
+_tcb_runtime_eval() {
+    eval "${_TCB_RUN_CMD} $*"
+}
+
 _tcb_choose_tag() {
     _tcb_load_local_tags
 
@@ -496,14 +503,11 @@ _tcb_maybe_load_completion() {
     fi
 
     _compl_script_path="/opt/torizoncore-builder/completion-scripts/torizoncore-builder-completion.bash"
-    if ${_TCB_RUN_CMD} --entrypoint="" --workdir="/" \
-                       "${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}" \
-                       sh -c "test -e ${_compl_script_path}"; then
+    if _tcb_runtime_eval "--entrypoint='' --workdir='/' '${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}' sh -c 'test -e ${_compl_script_path}'"; then
         echo "Loading completion script from container image."
         _tcb_tmp_file=$(mktemp) || return
-        if ${_TCB_RUN_CMD} --entrypoint="" --workdir="/" \
-                           "${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}" \
-                           cat "${_compl_script_path}" > "${_tcb_tmp_file}" 2>/dev/null && [ -s "${_tcb_tmp_file}" ]; then
+        if _tcb_runtime_eval "--entrypoint='' --workdir='/' '${_TCB_NAMESPACE}/${_TCB_IMAGENAME}:${_TCB_CHOSEN_TAG}' cat '${_compl_script_path}'" \
+                             > "${_tcb_tmp_file}" 2>/dev/null && [ -s "${_tcb_tmp_file}" ]; then
             # shellcheck disable=SC1090
             TCB_FUNCTION_NAME="${_TCB_FUNCTION_NAME}" . "${_tcb_tmp_file}" 2>/dev/null
         else
@@ -554,16 +558,25 @@ _tcb_define_command() {
             [ -t 1 ] && [ -t 2 ] && __tcb_flags="${__tcb_flags} -t"
             eval "${TCB_COMMAND_BASE}${__tcb_flags}${TCB_COMMAND_ARGS} $*"
         }
-        export -f torizoncorebuilder 2>/dev/null || :
-    else
+        if [ -n "${BASH_VERSION-}" ] || [ -n "${ZSH_VERSION-}" ]; then
+            export -f torizoncorebuilder 2>/dev/null || :
+	fi
+    elif [ -n "${BASH_VERSION-}" ] || [ -n "${ZSH_VERSION-}" ]; then
+        eval '
         torizoncore-builder() {
             __tcb_flags=""
             [ -t 0 ] && __tcb_flags="${__tcb_flags} -i"
             [ -t 1 ] && [ -t 2 ] && __tcb_flags="${__tcb_flags} -t"
             eval "${TCB_COMMAND_BASE}${__tcb_flags}${TCB_COMMAND_ARGS} $*"
         }
+        '
         export -f torizoncore-builder 2>/dev/null || :
+    else
+        echo "Error: shell does not support function names with dashes. Re-run with -P to export torizoncorebuilder instead."
+        return 1
     fi
+
+    return 0
 }
 
 _tcb_print_final_messages() {
@@ -600,6 +613,8 @@ _tcb_main0() {
     _tcb_init_defaults
 
     _tcb_parse_args "$@" || return 1
+    _tcb_validate_inputs "$@" || return 1
+    _tcb_validate_stdin_tty || return 1
     _tcb_check_dependencies || return 1
 
     if [ "${_TCB_AUTO_MODE}" != "local" ]; then
@@ -607,14 +622,12 @@ _tcb_main0() {
         _tcb_check_updated "${_TCB_SCRIPT_PATH}"
     fi
 
-    _tcb_validate_inputs "$@" || return 1
-    _tcb_validate_stdin_tty || return 1
     _tcb_choose_tag || return 1
     _tcb_maybe_pull_image || return 1
 
     # TODO: Consider putting the completion script inside the container image.
     _tcb_maybe_load_completion
-    _tcb_define_command
+    _tcb_define_command || return 1
     _tcb_print_final_messages
 }
 
