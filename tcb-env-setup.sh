@@ -114,7 +114,7 @@ tcb_env_setup_check_updated() {
   rm tcb-env-setup.sh.tmp
 
   if [ "$status_code" -eq 200 -a "$remote_md5sum" != "$local_md5sum" ]; then
-    echo -e "WARNING: This script is outdated. To update it, run 'wget -o tcb-env-setup.sh $target_url' \n"
+    echo -e "WARNING: This script is outdated. To update it, run 'wget -O tcb-env-setup.sh $target_url' \n"
   fi
 }
 
