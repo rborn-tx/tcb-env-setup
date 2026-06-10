@@ -1,7 +1,16 @@
 image: debian:stable-slim
 
 stages:
+  - lint
   - test
+
+lint:
+  stage: lint
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends shellcheck
+  script:
+    - scripts/lint.sh
 
 .shell_test:
   stage: test

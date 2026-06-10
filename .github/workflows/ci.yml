@@ -5,6 +5,22 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install lint dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+
+      - name: Run lint checks
+        run: scripts/lint.sh
+
   shell-tests:
     name: Test (${{ matrix.shell }})
     runs-on: ubuntu-latest
