@@ -140,10 +140,15 @@ Optional arguments:
 
   -- <docker_options>: extra options to be passed to "docker run".
        Parameters after -- are simply forwarded to the "docker run"
-       invocation in the alias that the script creates.
+       invocation in the command that the script defines.
 
   -h: help
        Prints usage information.
+
+COMPATIBILITY NOTE:
+  This script now exports a shell function instead of defining an alias.
+  If you were relying on an alias definition, please review your usage of
+  this setup script.
 EOF
 }
 
@@ -606,6 +611,15 @@ Setup complete. TorizonCore Builder is ready to be used.
 == Help
    - Run: ${_TCB_FUNCTION_NAME} -h
    - Docs: https://developer.toradex.com/knowledge-base/torizoncore-builder-tool
+EOF
+    cat <<EOF
+
+WARNING: This setup script now exposes TorizonCore Builder as a shell function,
+not as an alias as older versions.
+
+If you have existing scripts, shell startup files, or CI jobs that expect an
+alias named "torizoncore-builder", review them and update the checks or
+invocation logic as needed.
 EOF
 }
 
