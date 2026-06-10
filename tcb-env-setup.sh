@@ -14,6 +14,7 @@ _tcb_check_sourced() {
         [ "$(cd "$(dirname -- "$0")" && pwd -P)/$(basename -- "$0")" != "$(cd "$(dirname -- ${.sh.file})" && pwd -P)/$(basename -- ${.sh.file})" ] && _TCB_SOURCED=true
     elif [ -n "${BASH_VERSION}" ]; then
         # bash
+        # shellcheck disable=SC3028,SC3054
         [ "$(cd "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/$(basename -- "${BASH_SOURCE[0]}")" != "$(cd "$(dirname -- "$0")" && pwd -P)/$(basename -- "$0")" ] && _TCB_SOURCED=true
     else
         # All other shells: examine $0 for known shell binary filenames
@@ -559,8 +560,9 @@ _tcb_define_command() {
             eval "${TCB_COMMAND_BASE}${__tcb_flags}${TCB_COMMAND_ARGS} $*"
         }
         if [ -n "${BASH_VERSION-}" ] || [ -n "${ZSH_VERSION-}" ]; then
+            # shellcheck disable=SC3045
             export -f torizoncorebuilder 2>/dev/null || :
-	fi
+        fi
     elif [ -n "${BASH_VERSION-}" ] || [ -n "${ZSH_VERSION-}" ]; then
         eval '
         torizoncore-builder() {
@@ -570,6 +572,7 @@ _tcb_define_command() {
             eval "${TCB_COMMAND_BASE}${__tcb_flags}${TCB_COMMAND_ARGS} $*"
         }
         '
+        # shellcheck disable=SC3045
         export -f torizoncore-builder 2>/dev/null || :
     else
         echo "Error: shell does not support function names with dashes. Re-run with -P to export torizoncorebuilder instead."
