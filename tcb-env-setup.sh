@@ -557,6 +557,8 @@ _tcb_define_command() {
     # shellcheck disable=SC2034
     TCB_COMMAND="${TCB_COMMAND_BASE}${TCB_COMMAND_ARGS}"
 
+    export TCB_COMMAND_BASE TCB_COMMAND_ARGS TCB_COMMAND
+
     if [ "${_TCB_FUNCTION_NAME}" = "torizoncorebuilder" ]; then
         torizoncorebuilder() {
             __tcb_flags=""
