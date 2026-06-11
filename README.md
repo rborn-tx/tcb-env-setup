@@ -74,25 +74,64 @@ This selects the exact image tag you provide and pulls it if needed.
 
 `-a` and `-t` are mutually exclusive.
 
-## CI Example
+## CI Usage Examples
 
-A typical CI-friendly invocation is:
+### With Bash (recommended)
+
+A typical CI-friendly invocation when the shell is **Bash** is:
 
 ```bash
-. tcb-env-setup.sh -a remote -c -P
+. tcb-env-setup.sh -a remote -c
 ```
 
-Why these flags are useful in CI:
+Explanation:
 
 - `-a remote`: Avoids prompts and always selects the latest official version.
 - `-c`: Skips shell completion setup.
-- `-P`: Exports `torizoncorebuilder` instead of `torizoncore-builder`, which is safer in more minimal POSIX shell environments.
 
-Example usage:
+In Bash, the function `torizoncore-builder` is available in the current (parent) shell where the setup script was invoked and in child Bash processes directly or indirectly started from it.
+
+### With POSIX shells
+
+With basic POSIX shells there are some limitations:
+
+1. Passing parameters to a sourced script is not supported.
+2. Function names cannot contain dashes.
+3. Exporting a function through the environment is not supported.
+
+To work around the **first two limitations**, users can invoke the script like this:
+
+```
+set -- -a remote -c -P
+. ./tcb-env-setup.sh
+```
+
+Notice this overrides the current shell positional arguments.
+
+The `-P` switch causes the function being exported to be named `torizoncorebuilder` (without the dash character). Then, TorizonCore Builder could be run as so:
+
+```
+torizoncorebuilder --help
+```
+
+The **third limitation** means **child shells** would not see the invocation function defined by the setup script. To work around this, child shells can invoke TorizonCore Builder via the variable `TCB_COMMAND` which is also defined by the setup script. E.g.:
+
+```
+eval "${TCB_COMMAND}" --help
+```
+
+### With Zsh
+
+For **Zsh**, the setup script can be invoked in the same way as with Bash, that is:
 
 ```bash
-. tcb-env-setup.sh -a remote -c -P
-torizoncorebuilder --help
+. tcb-env-setup.sh -a remote -c
+```
+
+However, exporting functions through the environment is also not supported, like with POSIX shells. The solution is the same: from child shells, invoke TorizonCore Builder via `eval`:
+
+```
+eval "${TCB_COMMAND}" --help
 ```
 
 ## Early-Access Usage
